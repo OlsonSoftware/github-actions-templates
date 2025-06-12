@@ -155,9 +155,13 @@ jobs:
           echo '${{ inputs.environment_variables }}' > env.json
           echo "env-file=env.json" >> $GITHUB_OUTPUT
 
+      - name: Set environment variables
+        id: set-env
+        run: |
+          echo '${{ inputs.environment_variables }}' | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> $GITHUB_ENV
+
       - name: Build project
         run: ${{ steps.setup-pm.outputs.build-cmd }} ${{ inputs.additional_build_args }}
-        env: ${{ fromJSON(inputs.environment_variables) }}
 
       - name: Verify build output
         id: build-check
