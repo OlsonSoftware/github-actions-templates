@@ -84,13 +84,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     if: github.event.action != 'closed'
-    
     outputs:
       deployment-name: ${{ steps.deployment-name.outputs.name }}
       deployment-url: ${{ steps.deployment-name.outputs.url }}
       environment: ${{ steps.deployment-name.outputs.environment }}
       build-success: ${{ steps.build-check.outputs.success }}
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -144,6 +142,7 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10
+          run_install: false
 
       - name: Install dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -171,16 +170,13 @@ jobs:
             echo "success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
-          
           if [ ! -f "${{ inputs.wrangler_config_file }}" ]; then
             echo "Wrangler config file ${{ inputs.wrangler_config_file }} not found!"
             echo "success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
-          
           echo "Build verification successful"
           echo "success=true" >> $GITHUB_OUTPUT
-          
           echo "Build output contents:"
           ls -la ${{ inputs.build_output_dir }}
           echo "Sample files:"
@@ -216,10 +212,23 @@ jobs:
     environment:
       name: preview
       url: ${{ needs.build.outputs.deployment-url }}
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        if: inputs.package_manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_key_suffix }}
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -243,6 +252,7 @@ jobs:
           command: deploy --name ${{ needs.build.outputs.deployment-name }} --env preview
           workingDirectory: '.'
           wranglerVersion: '4'
+          packageManager: ${{ inputs.package_manager }}
 
       - name: Update PR with deployment info
         if: inputs.enable_preview_comments
@@ -283,7 +293,7 @@ jobs:
               pull_number: context.issue.number,
               body: body
             });
-
+            
             // Add deployment comment
             const commitSha = context.sha.substring(0, 7);
             const comment = `## 🚀 ${projectName} Preview Deployment Ready!
@@ -293,10 +303,10 @@ jobs:
             **🔗 Preview URL:** ${deploymentUrl}
             **📦 Commit:** \`${commitSha}\`
             **🌍 Environment:** Preview (PR #${{ github.event.number }})
-            **⏰ Deployed:** ${new Date().toLocaleString('en-US', { 
+            **⏰ Deployed:** ${new Date().toLocaleString('en-US', {
               timeZone: 'UTC',
               year: 'numeric',
-              month: 'short', 
+              month: 'short',
               day: 'numeric',
               hour: '2-digit',
               minute: '2-digit',
@@ -313,7 +323,7 @@ jobs:
             });
             
             const existingComment = comments.find(comment => 
-              comment.body.includes(`🚀 ${projectName} Preview Deployment Ready!`) && 
+              comment.body.includes(`🚀 ${projectName} Preview Deployment Ready!`) &&
               comment.body.includes(`Commit:** \`${commitSha}\``)
             );
             
@@ -333,10 +343,23 @@ jobs:
     environment:
       name: production
       url: ${{ needs.build.outputs.deployment-url }}
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        if: inputs.package_manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: ${{ inputs.package_manager }}
+          cache-dependency-path: ${{ inputs.cache_key_suffix }}
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -360,12 +383,27 @@ jobs:
           command: deploy --name ${{ needs.build.outputs.deployment-name }} --env production
           workingDirectory: '.'
           wranglerVersion: '4'
+          packageManager: ${{ inputs.package_manager }}
 
   cleanup-preview:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        if: inputs.package_manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
       - name: Delete preview deployment
         uses: cloudflare/wrangler-action@v3
         with:
@@ -374,6 +412,7 @@ jobs:
           command: delete --name ${{ inputs.project_name }}-pr-${{ github.event.number }} --force
           workingDirectory: '.'
           wranglerVersion: '4'
+          packageManager: ${{ inputs.package_manager }}
         continue-on-error: true
 
       - name: Comment on cleanup
@@ -387,10 +426,10 @@ jobs:
             The ephemeral preview environment for this PR has been successfully deleted.
             
             **✅ Worker Deleted:** \`${projectName}-pr-${{ github.event.number }}\`
-            **🗑️ Cleaned up:** ${new Date().toLocaleString('en-US', { 
+            **🗑️ Cleaned up:** ${new Date().toLocaleString('en-US', {
               timeZone: 'UTC',
               year: 'numeric',
-              month: 'short', 
+              month: 'short',
               day: 'numeric',
               hour: '2-digit',
               minute: '2-digit',
