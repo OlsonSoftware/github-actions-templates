@@ -1,0 +1,404 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  workflow_call:
+    inputs:
+      project_name:
+        description: 'Name of the project (used for worker naming)'
+        required: true
+        type: string
+      node_version:
+        description: 'Node.js version to use'
+        required: false
+        type: string
+        default: '24'
+      package_manager:
+        description: 'Package manager to use (npm, pnpm, yarn)'
+        required: false
+        type: string
+        default: 'pnpm'
+      build_command:
+        description: 'Command to build the project'
+        required: false
+        type: string
+        default: 'generate'
+      build_output_dir:
+        description: 'Directory containing build output'
+        required: false
+        type: string
+        default: '.output/public'
+      wrangler_config_file:
+        description: 'Wrangler configuration file name'
+        required: false
+        type: string
+        default: 'wrangler.json'
+      subdomain:
+        description: 'Cloudflare Workers subdomain (without .workers.dev)'
+        required: true
+        type: string
+      cache_key_suffix:
+        description: 'Additional suffix for cache key (e.g., lock file name)'
+        required: false
+        type: string
+        default: 'pnpm-lock.yaml'
+      enable_preview_comments:
+        description: 'Enable PR comments with preview deployment info'
+        required: false
+        type: boolean
+        default: true
+      enable_cleanup_comments:
+        description: 'Enable cleanup comments when PR is closed'
+        required: false
+        type: boolean
+        default: true
+      additional_build_args:
+        description: 'Additional arguments to pass to build command'
+        required: false
+        type: string
+        default: ''
+      environment_variables:
+        description: 'Environment variables for build (JSON format)'
+        required: false
+        type: string
+        default: '{"NODE_ENV": "production"}'
+    secrets:
+      CF_API_TOKEN:
+        description: 'Cloudflare API Token'
+        required: true
+      CF_ACCOUNT_ID:
+        description: 'Cloudflare Account ID'
+        required: true
+
+# Concurrency control to cancel previous runs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}-${{ inputs.project_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  deployments: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.event.action != 'closed'
+    
+    outputs:
+      deployment-name: ${{ steps.deployment-name.outputs.name }}
+      deployment-url: ${{ steps.deployment-name.outputs.url }}
+      environment: ${{ steps.deployment-name.outputs.environment }}
+      build-success: ${{ steps.build-check.outputs.success }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Setup package manager and cache
+        id: setup-pm
+        run: |
+          case "${{ inputs.package_manager }}" in
+            "pnpm")
+              echo "cache-path=node_modules" >> $GITHUB_OUTPUT
+              echo "cache-key=${{ runner.os }}-node-modules-${{ hashFiles(inputs.cache_key_suffix) }}" >> $GITHUB_OUTPUT
+              echo "install-cmd=pnpm install" >> $GITHUB_OUTPUT
+              echo "build-cmd=pnpm run ${{ inputs.build_command }}" >> $GITHUB_OUTPUT
+              ;;
+            "npm")
+              echo "cache-path=~/.npm" >> $GITHUB_OUTPUT
+              echo "cache-key=${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}" >> $GITHUB_OUTPUT
+              echo "install-cmd=npm ci" >> $GITHUB_OUTPUT
+              echo "build-cmd=npm run ${{ inputs.build_command }}" >> $GITHUB_OUTPUT
+              ;;
+            "yarn")
+              echo "cache-path=~/.yarn/cache" >> $GITHUB_OUTPUT
+              echo "cache-key=${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}" >> $GITHUB_OUTPUT
+              echo "install-cmd=yarn install --frozen-lockfile" >> $GITHUB_OUTPUT
+              echo "build-cmd=yarn ${{ inputs.build_command }}" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "Unsupported package manager: ${{ inputs.package_manager }}"
+              exit 1
+              ;;
+          esac
+
+      - name: Cache dependencies
+        id: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.setup-pm.outputs.cache-path }}
+          key: ${{ steps.setup-pm.outputs.cache-key }}
+          restore-keys: |
+            ${{ runner.os }}-${{ inputs.package_manager }}-
+
+      - name: Install pnpm
+        if: inputs.package_manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: ${{ steps.setup-pm.outputs.install-cmd }}
+
+      - name: Parse environment variables
+        id: parse-env
+        run: |
+          echo '${{ inputs.environment_variables }}' > env.json
+          echo "env-file=env.json" >> $GITHUB_OUTPUT
+
+      - name: Build project
+        run: ${{ steps.setup-pm.outputs.build-cmd }} ${{ inputs.additional_build_args }}
+        env: ${{ fromJSON(inputs.environment_variables) }}
+
+      - name: Verify build output
+        id: build-check
+        run: |
+          if [ ! -d "${{ inputs.build_output_dir }}" ]; then
+            echo "Build output directory ${{ inputs.build_output_dir }} not found!"
+            echo "success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          if [ ! -f "${{ inputs.wrangler_config_file }}" ]; then
+            echo "Wrangler config file ${{ inputs.wrangler_config_file }} not found!"
+            echo "success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo "Build verification successful"
+          echo "success=true" >> $GITHUB_OUTPUT
+          
+          echo "Build output contents:"
+          ls -la ${{ inputs.build_output_dir }}
+          echo "Sample files:"
+          find ${{ inputs.build_output_dir }} -type f | head -10
+
+      - name: Set deployment configuration
+        id: deployment-name
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "name=${{ inputs.project_name }}-pr-${{ github.event.number }}" >> $GITHUB_OUTPUT
+            echo "environment=preview" >> $GITHUB_OUTPUT
+            echo "url=https://${{ inputs.project_name }}-pr-${{ github.event.number }}.${{ inputs.subdomain }}.workers.dev" >> $GITHUB_OUTPUT
+          else
+            echo "name=${{ inputs.project_name }}" >> $GITHUB_OUTPUT
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "url=https://${{ inputs.project_name }}.${{ inputs.subdomain }}.workers.dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-files-${{ inputs.project_name }}-${{ github.run_id }}
+          path: |
+            ${{ inputs.build_output_dir }}/
+            ${{ inputs.wrangler_config_file }}
+            package.json
+          retention-days: 1
+
+  deploy-preview:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action != 'closed' && needs.build.outputs.build-success == 'true'
+    environment:
+      name: preview
+      url: ${{ needs.build.outputs.deployment-url }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-files-${{ inputs.project_name }}-${{ github.run_id }}
+
+      - name: Verify downloaded artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          ls -la
+          echo "Build output directory:"
+          ls -la ${{ inputs.build_output_dir }}
+          echo "Wrangler config:"
+          ls -la ${{ inputs.wrangler_config_file }}
+
+      - name: Deploy to Cloudflare Workers (Preview)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command: deploy --name ${{ needs.build.outputs.deployment-name }} --env preview
+          workingDirectory: '.'
+          wranglerVersion: '4'
+
+      - name: Update PR with deployment info
+        if: inputs.enable_preview_comments
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deploymentUrl = '${{ needs.build.outputs.deployment-url }}';
+            const projectName = '${{ inputs.project_name }}';
+            
+            // Update PR description
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            
+            let body = pr.body || '';
+            const previewPlaceholder = `**${projectName} Preview:** \n<!-- This will be automatically populated when the PR is created -->`;
+            const previewReplacement = `**${projectName} Preview:** ${deploymentUrl}`;
+            
+            if (body.includes(previewPlaceholder)) {
+              body = body.replace(previewPlaceholder, previewReplacement);
+            } else {
+              const previewRegex = new RegExp(`\\*\\*${projectName} Preview:\\*\\* https:\\/\\/[^\\s\\n]+`, 'g');
+              if (previewRegex.test(body)) {
+                body = body.replace(previewRegex, previewReplacement);
+              } else {
+                const previewSectionRegex = /(## Preview\s*\n\s*)/;
+                if (previewSectionRegex.test(body)) {
+                  body = body.replace(previewSectionRegex, `$1${previewReplacement}\n\n`);
+                }
+              }
+            }
+            
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              body: body
+            });
+
+            // Add deployment comment
+            const commitSha = context.sha.substring(0, 7);
+            const comment = `## 🚀 ${projectName} Preview Deployment Ready!
+            
+            Your changes have been deployed to a preview environment:
+            
+            **🔗 Preview URL:** ${deploymentUrl}
+            **📦 Commit:** \`${commitSha}\`
+            **🌍 Environment:** Preview (PR #${{ github.event.number }})
+            **⏰ Deployed:** ${new Date().toLocaleString('en-US', { 
+              timeZone: 'UTC',
+              year: 'numeric',
+              month: 'short', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              timeZoneName: 'short'
+            })}
+            
+            > This preview will be automatically deleted when the PR is closed.`;
+            
+            // Check for existing deployment comments to avoid duplicates
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const existingComment = comments.find(comment => 
+              comment.body.includes(`🚀 ${projectName} Preview Deployment Ready!`) && 
+              comment.body.includes(`Commit:** \`${commitSha}\``)
+            );
+            
+            if (!existingComment) {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            }
+
+  deploy-production:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && needs.build.outputs.build-success == 'true'
+    environment:
+      name: production
+      url: ${{ needs.build.outputs.deployment-url }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-files-${{ inputs.project_name }}-${{ github.run_id }}
+
+      - name: Verify downloaded artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          ls -la
+          echo "Build output directory:"
+          ls -la ${{ inputs.build_output_dir }}
+          echo "Wrangler config:"
+          ls -la ${{ inputs.wrangler_config_file }}
+
+      - name: Deploy to Cloudflare Workers (Production)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command: deploy --name ${{ needs.build.outputs.deployment-name }} --env production
+          workingDirectory: '.'
+          wranglerVersion: '4'
+
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    
+    steps:
+      - name: Delete preview deployment
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command: delete --name ${{ inputs.project_name }}-pr-${{ github.event.number }} --force
+          workingDirectory: '.'
+          wranglerVersion: '4'
+        continue-on-error: true
+
+      - name: Comment on cleanup
+        if: inputs.enable_cleanup_comments
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const projectName = '${{ inputs.project_name }}';
+            const comment = `## 🧹 ${projectName} Preview Deployment Cleaned Up
+            
+            The ephemeral preview environment for this PR has been successfully deleted.
+            
+            **✅ Worker Deleted:** \`${projectName}-pr-${{ github.event.number }}\`
+            **🗑️ Cleaned up:** ${new Date().toLocaleString('en-US', { 
+              timeZone: 'UTC',
+              year: 'numeric',
+              month: 'short', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              timeZoneName: 'short'
+            })}
+            
+            > Preview deployments are automatically cleaned up to keep your Cloudflare Workers dashboard organized.`;
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+        continue-on-error: true
