@@ -27,12 +27,12 @@ on:
         required: false
         type: string
         default: '.output/public'
-      wrangler_config_filename:
+      wrangler_config_file:
         description: 'Wrangler configuration file name'
         required: false
         type: string
         default: 'wrangler.json'
-      wrangler_config_directory:
+      wrangler_working_directory:
         description: 'Working directory for Wrangler commands'
         required: false
         type: string
@@ -183,8 +183,8 @@ jobs:
             echo "success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
-          if [ ! -f "${{ inputs.wrangler_config_filename }}" ]; then
-            echo "Wrangler config file ${{ inputs.wrangler_config_filename }} not found!"
+          if [ ! -f "${{ inputs.wrangler_config_file }}" ]; then
+            echo "Wrangler config file ${{ inputs.wrangler_config_file }} not found!"
             echo "success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
@@ -214,7 +214,7 @@ jobs:
           name: build-files-${{ inputs.project_name }}-${{ github.run_id }}
           path: |
             ${{ inputs.build_output_dir }}/
-            ${{ inputs.wrangler_config_filename }}
+            ${{ inputs.wrangler_config_file }}
             package.json
           retention-days: 1
 
@@ -255,15 +255,15 @@ jobs:
           echo "Build output directory:"
           ls -la ${{ inputs.build_output_dir }}
           echo "Wrangler config:"
-          ls -la ${{ inputs.wrangler_config_filename }}
+          ls -la ${{ inputs.wrangler_config_file }}
 
       - name: Deploy to Cloudflare Workers (Preview)
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          command: deploy --name ${{ needs.build.outputs.deployment-name }} --config ${{ inputs.wrangler_config_filename }}
-          workingDirectory: ${{ inputs.wrangler_config_directory }}
+          command: deploy --name ${{ needs.build.outputs.deployment-name }} --config ${{ inputs.wrangler_config_file }}
+          workingDirectory: ${{ inputs.wrangler_working_directory }}
           wranglerVersion: '4'
           packageManager: ${{ inputs.package_manager }}
 
@@ -387,15 +387,15 @@ jobs:
           echo "Build output directory:"
           ls -la ${{ inputs.build_output_dir }}
           echo "Wrangler config:"
-          ls -la ${{ inputs.wrangler_config_filename }}
+          ls -la ${{ inputs.wrangler_config_file }}
 
       - name: Deploy to Cloudflare Workers (Production)
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          command: deploy --name ${{ needs.build.outputs.deployment-name }} --config ${{ inputs.wrangler_config_filename }}
-          workingDirectory: ${{ inputs.wrangler_config_directory }}
+          command: deploy --name ${{ needs.build.outputs.deployment-name }} --config ${{ inputs.wrangler_config_file }}
+          workingDirectory: ${{ inputs.wrangler_working_directory }}
           wranglerVersion: '4'
           packageManager: ${{ inputs.package_manager }}
 
@@ -424,7 +424,7 @@ jobs:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           command: delete --name ${{ inputs.project_name }}-pr-${{ github.event.number }} --force
-          workingDirectory: ${{ inputs.wrangler_config_directory }}
+          workingDirectory: ${{ inputs.wrangler_working_directory }}
           wranglerVersion: '4'
           packageManager: ${{ inputs.package_manager }}
         continue-on-error: true
