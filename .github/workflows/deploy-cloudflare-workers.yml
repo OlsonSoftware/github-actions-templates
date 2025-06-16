@@ -203,12 +203,19 @@ jobs:
             echo "url=https://${{ inputs.project_name }}.${{ inputs.subdomain }}.workers.dev" >> $GITHUB_OUTPUT
           fi
 
+      # move build output to "./staging" directory
+      - name: Move build output to staging directory
+        run: |
+          mkdir -p staging
+          mv ${{ inputs.build_output_dir }}/* staging/
+          echo "Build output moved to staging directory"
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-files-${{ inputs.project_name }}-${{ github.run_id }}
           include-hidden-files: true
-          path: ${{ inputs.build_output_dir }}/
+          path: staging/
           retention-days: 1
 
   deploy-preview:
