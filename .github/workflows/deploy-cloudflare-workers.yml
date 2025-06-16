@@ -208,8 +208,7 @@ jobs:
         with:
           name: build-files-${{ inputs.project_name }}-${{ github.run_id }}
           path: |
-            ${{ inputs.build_output_dir }}/
-            ${{ inputs.wrangler_config_file }}
+            ${{ inputs.build_output_dir }}/**
             package.json
           retention-days: 1
 
