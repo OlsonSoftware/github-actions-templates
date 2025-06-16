@@ -257,7 +257,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          command: deploy --name ${{ needs.build.outputs.deployment-name }}
+          command: deploy --name ${{ needs.build.outputs.deployment-name }} --config ${{ inputs.wrangler_config_file }}
           workingDirectory: '.'
           wranglerVersion: '4'
           packageManager: ${{ inputs.package_manager }}
@@ -389,7 +389,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          command: deploy --name ${{ needs.build.outputs.deployment-name }}
+          command: deploy --name ${{ needs.build.outputs.deployment-name }} --config ${{ inputs.wrangler_config_file }}
           workingDirectory: '.'
           wranglerVersion: '4'
           packageManager: ${{ inputs.package_manager }}
