@@ -208,7 +208,7 @@ jobs:
         with:
           name: build-files-${{ inputs.project_name }}-${{ github.run_id }}
           path: |
-            ${{ inputs.build_output_dir }}
+            ${{ inputs.build_output_dir }}/
           retention-days: 1
 
   deploy-preview:
