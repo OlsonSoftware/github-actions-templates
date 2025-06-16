@@ -253,6 +253,8 @@ jobs:
           workingDirectory: '.'
           wranglerVersion: '4'
           packageManager: ${{ inputs.package_manager }}
+        env:
+          CLOUDFLARE_ENV: preview
 
       - name: Update PR with deployment info
         if: inputs.enable_preview_comments
@@ -384,6 +386,8 @@ jobs:
           workingDirectory: '.'
           wranglerVersion: '4'
           packageManager: ${{ inputs.package_manager }}
+        env:
+          CLOUDFLARE_ENV: production
 
   cleanup-preview:
     runs-on: ubuntu-latest
