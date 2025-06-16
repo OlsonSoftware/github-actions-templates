@@ -89,6 +89,7 @@ jobs:
       deployment-url: ${{ steps.deployment-name.outputs.url }}
       environment: ${{ steps.deployment-name.outputs.environment }}
       build-success: ${{ steps.build-check.outputs.success }}
+      cloudflare-env: ${{ steps.set-cf-env.outputs.cf-env }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -148,19 +149,26 @@ jobs:
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: ${{ steps.setup-pm.outputs.install-cmd }}
 
-      - name: Parse environment variables
-        id: parse-env
+      - name: Set Cloudflare environment
+        id: set-cf-env
         run: |
-          echo '${{ inputs.environment_variables }}' > env.json
-          echo "env-file=env.json" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "cf-env=preview" >> $GITHUB_OUTPUT
+            echo "CLOUDFLARE_ENV=preview" >> $GITHUB_ENV
+          else
+            echo "cf-env=production" >> $GITHUB_OUTPUT
+            echo "CLOUDFLARE_ENV=production" >> $GITHUB_ENV
+          fi
 
-      - name: Set environment variables
+      - name: Parse and set environment variables
         id: set-env
         run: |
           echo '${{ inputs.environment_variables }}' | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> $GITHUB_ENV
 
       - name: Build project
         run: ${{ steps.setup-pm.outputs.build-cmd }} ${{ inputs.additional_build_args }}
+        env:
+          CLOUDFLARE_ENV: ${{ steps.set-cf-env.outputs.cf-env }}
 
       - name: Verify build output
         id: build-check
@@ -249,7 +257,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          command: deploy --name ${{ needs.build.outputs.deployment-name }} --env preview
+          command: deploy --name ${{ needs.build.outputs.deployment-name }}
           workingDirectory: '.'
           wranglerVersion: '4'
           packageManager: ${{ inputs.package_manager }}
@@ -303,6 +311,7 @@ jobs:
             **🔗 Preview URL:** ${deploymentUrl}
             **📦 Commit:** \`${commitSha}\`
             **🌍 Environment:** Preview (PR #${{ github.event.number }})
+            **⚙️ Cloudflare Env:** ${{ needs.build.outputs.cloudflare-env }}
             **⏰ Deployed:** ${new Date().toLocaleString('en-US', {
               timeZone: 'UTC',
               year: 'numeric',
@@ -380,7 +389,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          command: deploy --name ${{ needs.build.outputs.deployment-name }} --env production
+          command: deploy --name ${{ needs.build.outputs.deployment-name }}
           workingDirectory: '.'
           wranglerVersion: '4'
           packageManager: ${{ inputs.package_manager }}
