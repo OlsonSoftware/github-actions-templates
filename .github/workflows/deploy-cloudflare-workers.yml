@@ -32,11 +32,6 @@ on:
         required: false
         type: string
         default: 'wrangler.json'
-      wrangler_working_directory:
-        description: 'Working directory for Wrangler commands'
-        required: false
-        type: string
-        default: '.'
       subdomain:
         description: 'Cloudflare Workers subdomain (without .workers.dev)'
         required: true
@@ -263,7 +258,7 @@ jobs:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           command: deploy --name ${{ needs.build.outputs.deployment-name }} --config ${{ inputs.wrangler_config_file }}
-          workingDirectory: ${{ inputs.wrangler_working_directory }}
+          workingDirectory: '.'
           wranglerVersion: '4'
           packageManager: ${{ inputs.package_manager }}
 
@@ -395,7 +390,7 @@ jobs:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           command: deploy --name ${{ needs.build.outputs.deployment-name }} --config ${{ inputs.wrangler_config_file }}
-          workingDirectory: ${{ inputs.wrangler_working_directory }}
+          workingDirectory: '.'
           wranglerVersion: '4'
           packageManager: ${{ inputs.package_manager }}
 
@@ -424,7 +419,7 @@ jobs:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           command: delete --name ${{ inputs.project_name }}-pr-${{ github.event.number }} --force
-          workingDirectory: ${{ inputs.wrangler_working_directory }}
+          workingDirectory: '.'
           wranglerVersion: '4'
           packageManager: ${{ inputs.package_manager }}
         continue-on-error: true
