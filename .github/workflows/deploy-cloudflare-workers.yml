@@ -207,8 +207,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-files-${{ inputs.project_name }}-${{ github.run_id }}
-          path: |
-            ${{ inputs.build_output_dir }}/
+          path: ${{ inputs.build_output_dir }}/*
           retention-days: 1
 
   deploy-preview:
