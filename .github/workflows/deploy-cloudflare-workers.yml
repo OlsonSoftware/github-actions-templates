@@ -206,8 +206,8 @@ jobs:
       # move build output to "./staging" directory
       - name: Move build output to staging directory
         run: |
-          mkdir -p staging
-          mv ${{ inputs.build_output_dir }}/* staging/
+          mkdir -p staging/${{ inputs.build_output_dir }}
+          mv ${{ inputs.build_output_dir }}/* staging/${{ inputs.build_output_dir }}
           echo "Build output moved to staging directory"
 
       - name: Upload build artifacts
