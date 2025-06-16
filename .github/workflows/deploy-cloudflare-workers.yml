@@ -112,13 +112,13 @@ jobs:
               ;;
             "npm")
               echo "cache-path=~/.npm" >> $GITHUB_OUTPUT
-              echo "cache-key=${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}" >> $GITHUB_OUTPUT
+              echo "cache-key=${{ runner.os }}-node-modules-${{ hashFiles(inputs.cache_key_suffix) }}" >> $GITHUB_OUTPUT
               echo "install-cmd=npm ci" >> $GITHUB_OUTPUT
               echo "build-cmd=npm run ${{ inputs.build_command }}" >> $GITHUB_OUTPUT
               ;;
             "yarn")
               echo "cache-path=~/.yarn/cache" >> $GITHUB_OUTPUT
-              echo "cache-key=${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}" >> $GITHUB_OUTPUT
+              echo "cache-key=${{ runner.os }}-node-modules-${{ hashFiles(inputs.cache_key_suffix) }}" >> $GITHUB_OUTPUT
               echo "install-cmd=yarn install --frozen-lockfile" >> $GITHUB_OUTPUT
               echo "build-cmd=yarn ${{ inputs.build_command }}" >> $GITHUB_OUTPUT
               ;;
