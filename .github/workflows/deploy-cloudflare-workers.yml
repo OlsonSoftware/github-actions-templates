@@ -112,7 +112,7 @@ jobs:
               echo "build-cmd=pnpm run ${{ inputs.build_command }}" >> $GITHUB_OUTPUT
               ;;
             "npm")
-              echo "cache-path=~/.npm" >> $GITHUB_OUTPUT
+              echo "cache-path=node_modules" >> $GITHUB_OUTPUT
               echo "cache-key=${{ runner.os }}-node-modules-${{ hashFiles(inputs.cache_key_suffix) }}" >> $GITHUB_OUTPUT
               echo "install-cmd=npm ci" >> $GITHUB_OUTPUT
               echo "build-cmd=npm run ${{ inputs.build_command }}" >> $GITHUB_OUTPUT
